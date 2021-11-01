@@ -4,9 +4,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: no
       matrix:
         racket-variant: [ 'BC', 'CS' ]
         racket-version: [ '8.2', 'current' ]
+      include:
+        - racket-version: current
+          allow-fail: yes
     name: Build and Test on Racket ${{ matrix.racket-variant }} ${{ matrix.racket-version }}
     steps:
       - uses: actions/checkout@master
@@ -18,3 +22,4 @@ jobs:
           variant: ${{ matrix.racket-variant }}
       - run: raco pkg install --batch --auto smtp-server/ smtp-server-test/
       - run: raco test -l tests/net/smtp-server
+        continue-on-error: ${{ matrix.allow-fail }}
