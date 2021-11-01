@@ -1,0 +1,20 @@
+on: [push, pull_request]
+name: CI
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        racket-variant: [ 'BC', 'CS' ]
+        racket-version: [ '8.2', 'current' ]
+    name: Build and Test on Racket ${{ matrix.racket-variant }} ${{ matrix.racket-version }}
+    steps:
+      - uses: actions/checkout@master
+      - name: Setup Racket
+        uses: Bogdanp/setup-racket@v1.6.1
+        with:
+          architecture: x64
+          version: ${{ matrix.racket-version }}
+          variant: ${{ matrix.racket-variant }}
+      - run: raco pkg install --batch --auto smtp-server/ smtp-server-test/
+      - run: raco test -l tests/net/smtp-server
