@@ -2,7 +2,7 @@ on: [push, pull_request]
 name: CI
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     strategy:
       fail-fast: false
       matrix:
@@ -22,4 +22,4 @@ jobs:
           variant: ${{ matrix.racket-variant }}
       - run: raco pkg install --batch --auto smtp-server/ smtp-server-test/
       - run: raco test -l tests/net/smtp-server
-        continue-on-error: ${{ matrix.allow-fail }}
+        continue-on-error: ${{ matrix.allow-fail || false }}
