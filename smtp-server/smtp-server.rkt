@@ -252,10 +252,9 @@
 (define (parse-command line [len (bytes-length line)])
   (string->symbol
    (string-downcase
-    (bytes->string/utf-8
-     (subbytes line 0 (or (find-sp line len)
-                          (find-crlf line len)
-                          len))))))
+    (bytes->string/utf-8 line #\nul 0 (or (find-sp line len)
+                                          (find-crlf line len)
+                                          len)))))
 
 
 ;; reading ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
