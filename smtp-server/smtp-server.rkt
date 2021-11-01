@@ -38,14 +38,14 @@
 (define (add-envelope-data e data)
   (struct-copy envelope e [data data]))
 
-(define (envelope-size e)
+(define (envelope-length e)
   (+ (bytes-length (envelope-data e))
      (bytes-length (envelope-sender e))
      (for/sum ([r (in-list (envelope-recipients e))])
        (bytes-length r))))
 
 (define (envelope-too-long? e)
-  (> (envelope-size e)
+  (> (envelope-length e)
      (current-smtp-max-envelope-length)))
 
 
@@ -213,7 +213,7 @@
                  (rep 354 "end data with <CRLF>.<CRLF>")
                  (define max-len
                    (- (current-smtp-max-envelope-length)
-                      (envelope-size envelope)))
+                      (envelope-length envelope)))
                  (define data
                    (read-mail-data line-buf in scratch-buf max-len))
                  (cond
