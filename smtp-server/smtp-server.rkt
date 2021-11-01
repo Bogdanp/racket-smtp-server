@@ -39,12 +39,10 @@
   (struct-copy envelope e [data data]))
 
 (define (envelope-size e)
-  (+ (bytes-length (envelope-sender e))
+  (+ (bytes-length (envelope-data e))
+     (bytes-length (envelope-sender e))
      (for/sum ([r (in-list (envelope-recipients e))])
-       (bytes-length r))
-     (cond
-       [(envelope-data e) => bytes-length]
-       [else 0])))
+       (bytes-length r))))
 
 (define (envelope-too-long? e)
   (> (envelope-size e)
