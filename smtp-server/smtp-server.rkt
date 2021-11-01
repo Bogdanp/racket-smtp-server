@@ -113,9 +113,9 @@
       (flush-output out))
     (when start?
       (rep 220 "ready"))
-    (with-handlers ([exn:fail:network?
+    (with-handlers ([exn:fail?
                      (λ (e)
-                       (log-smtp-server-warning "connection error: ~a" (exn-message e)))])
+                       (log-smtp-server-warning "unhandled error: ~a" (exn-message e)))])
       (let loop ([envelope #f])
         (define line-len
           (read-smtp-line! line-buf in scratch-buf))
