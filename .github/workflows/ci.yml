@@ -8,9 +8,9 @@ jobs:
       matrix:
         racket-variant: [ 'BC', 'CS' ]
         racket-version: [ '8.2', 'current' ]
-      include:
-        - racket-version: current
-          allow-fail: true
+        include:
+          - racket-version: current
+            allow-fail: true
     name: Build and Test on Racket ${{ matrix.racket-variant }} ${{ matrix.racket-version }}
     steps:
       - uses: actions/checkout@master
