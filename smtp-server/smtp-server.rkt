@@ -122,136 +122,133 @@
                      (λ (e)
                        (log-smtp-server-warning "unhandled error: ~a" (exn-message e)))])
       (let loop ([envelope #f])
-        (define line-len
-          (read-smtp-line! line-buf in scratch-buf))
-        (cond
-          [line-len
-           (case (parse-command line-buf line-len)
-             [(helo)
-              (rep 250)
-              (loop #f)]
-
-             [(ehlo)
-              (rep- 250 (current-smtp-hostname))
-              (rep- 250 "8BITMIME")
-              (rep- 250 (format "SIZE ~a" (current-smtp-max-envelope-length)))
-              (when tls-encode
-                (rep- 250 "STARTTLS"))
-              (rep 250)
-              (loop #f)]
-
-             [(rset)
-              (rep 250)
-              (loop #f)]
-
-             [(noop)
-              (rep 250)
-              (loop envelope)]
-
-             [(starttls)
-              (with-handlers ([exn:fail? (λ (_)
-                                           (log-smtp-server-warning "TLS handshake failed")
-                                           (rep 500 "protocol error")
-                                           (loop #f))])
-                (rep 220)
-                (log-smtp-server-debug "initiating TLS handshake")
-                (define-values (ssl-in ssl-out)
-                  (tls-encode in out #:mode 'accept #:encrypt 'tls #:close-original? #t))
-                (log-smtp-server-debug "TLS connection initiatied")
-                (connection-loop ssl-in ssl-out #f))]
-
-             [(mail)
-              ;; Potential improvements:
-              ;;   * Handling of 7BIT or 8BITMIME params from RFC1652
-              ;;   * Handling of SIZE= param from RFC1870
-              (cond
-                [envelope
-                 (rep 503 "nested MAIL command")
-                 (loop envelope)]
-
-                [(regexp-match #rx#"^(?i:(mail from:<([^>]+)>))" line-buf 0 line-len)
-                 => (λ (matches)
-                      (define new-envelope
-                        (make-envelope (caddr matches)))
-                      (cond
-                        [(envelope-too-long? new-envelope)
-                         (rep 552 "message exceeds fixed message maximum size")
-                         (loop #f)]
-
-                        [else
-                         (rep 250)
-                         (loop (make-envelope (caddr matches)))]))]
-
-                [else
-                 (rep 501 "syntax: MAIL FROM:<ADDRESS>")
-                 (loop #f)])]
-
-             [(rcpt)
-              (cond
-                [(and envelope (regexp-match #rx#"^(?i:(rcpt to:<([^>]+)>))" line-buf 0 line-len))
-                 => (λ (matches)
-                      (define new-envelope
-                        (add-envelope-recipient envelope (caddr matches)))
-                      (cond
-                        [(envelope-too-long? new-envelope)
-                         (rep 552 "message exceeds fixed message maximum size")
-                         (loop envelope)]
-
-                        [else
-                         (rep 250)
-                         (loop new-envelope)]))]
-
-                [envelope
-                 (rep 501 "syntax: RCPT TO:<ADDRESS>")
-                 (loop envelope)]
-
-                [else
-                 (rep 503 "need MAIL command")
-                 (loop #f)])]
-
-             [(data)
-              (cond
-                [(and envelope (null? (envelope-recipients envelope)))
-                 (rep 503 "need recipients")
-                 (loop envelope)]
-
-                [envelope
-                 (rep 354 "end data with <CRLF>.<CRLF>")
-                 (define max-len
-                   (- (current-smtp-max-envelope-length)
-                      (envelope-length envelope)))
-                 (define data
-                   (read-mail-data line-buf in scratch-buf max-len))
-                 (cond
-                   [data
-                    (with-handlers ([exn:fail?
-                                     (λ (e)
-                                       (log-smtp-server-warning "unexpected handler error: ~a" (exn-message e))
-                                       (rep 554 "internal error")
-                                       (loop #f))])
-                      (handler (add-envelope-data envelope data))
-                      (rep 250)
-                      (loop #f))]
-
-                   [else
-                    (rep 552 "message exceeds fixed message maximum size")
-                    (loop envelope)])]
-
-                [else
-                 (rep 503 "need MAIL command")
-                 (loop #f)])]
-
-             [(quit)
-              (rep 221 "goodbye")]
-
-             [else
-              (rep 502 "command not recognized")
-              (loop envelope)])]
-
-          [else
+        (define line-len (read-smtp-line! line-buf in scratch-buf))
+        (case (and line-len (parse-command line-buf line-len))
+          [(#f)
            (discard-smtp-line in scratch-buf)
            (rep 500 "line too long")
-           (loop #f)])))
+           (loop #f)]
+
+          [(helo)
+           (rep 250)
+           (loop #f)]
+
+          [(ehlo)
+           (rep- 250 (current-smtp-hostname))
+           (rep- 250 "8BITMIME")
+           (rep- 250 (format "SIZE ~a" (current-smtp-max-envelope-length)))
+           (when tls-encode
+             (rep- 250 "STARTTLS"))
+           (rep 250)
+           (loop #f)]
+
+          [(rset)
+           (rep 250)
+           (loop #f)]
+
+          [(noop)
+           (rep 250)
+           (loop envelope)]
+
+          [(starttls)
+           (with-handlers ([exn:fail? (λ (_)
+                                        (log-smtp-server-warning "TLS handshake failed")
+                                        (rep 500 "protocol error")
+                                        (loop #f))])
+             (rep 220)
+             (log-smtp-server-debug "initiating TLS handshake")
+             (define-values (ssl-in ssl-out)
+               (tls-encode in out #:mode 'accept #:encrypt 'tls #:close-original? #t))
+             (log-smtp-server-debug "TLS connection initiatied")
+             (connection-loop ssl-in ssl-out #f))]
+
+          [(mail)
+           ;; Potential improvements:
+           ;;   * Handling of 7BIT or 8BITMIME params from RFC1652
+           ;;   * Handling of SIZE= param from RFC1870
+           (cond
+             [envelope
+              (rep 503 "nested MAIL command")
+              (loop envelope)]
+
+             [(regexp-match #rx#"^(?i:(mail from:<([^>]+)>))" line-buf 0 line-len)
+              => (λ (matches)
+                   (define new-envelope
+                     (make-envelope (caddr matches)))
+                   (cond
+                     [(envelope-too-long? new-envelope)
+                      (rep 552 "message exceeds fixed message maximum size")
+                      (loop #f)]
+
+                     [else
+                      (rep 250)
+                      (loop (make-envelope (caddr matches)))]))]
+
+             [else
+              (rep 501 "syntax: MAIL FROM:<ADDRESS>")
+              (loop #f)])]
+
+          [(rcpt)
+           (cond
+             [(and envelope (regexp-match #rx#"^(?i:(rcpt to:<([^>]+)>))" line-buf 0 line-len))
+              => (λ (matches)
+                   (define new-envelope
+                     (add-envelope-recipient envelope (caddr matches)))
+                   (cond
+                     [(envelope-too-long? new-envelope)
+                      (rep 552 "message exceeds fixed message maximum size")
+                      (loop envelope)]
+
+                     [else
+                      (rep 250)
+                      (loop new-envelope)]))]
+
+             [envelope
+              (rep 501 "syntax: RCPT TO:<ADDRESS>")
+              (loop envelope)]
+
+             [else
+              (rep 503 "need MAIL command")
+              (loop #f)])]
+
+          [(data)
+           (cond
+             [(and envelope (null? (envelope-recipients envelope)))
+              (rep 503 "need recipients")
+              (loop envelope)]
+
+             [envelope
+              (rep 354 "end data with <CRLF>.<CRLF>")
+              (define max-len
+                (- (current-smtp-max-envelope-length)
+                   (envelope-length envelope)))
+              (define data
+                (read-mail-data line-buf in scratch-buf max-len))
+              (cond
+                [data
+                 (with-handlers ([exn:fail?
+                                  (λ (e)
+                                    (log-smtp-server-warning "unexpected handler error: ~a" (exn-message e))
+                                    (rep 554 "internal error")
+                                    (loop #f))])
+                   (handler (add-envelope-data envelope data))
+                   (rep 250)
+                   (loop #f))]
+
+                [else
+                 (rep 552 "message exceeds fixed message maximum size")
+                 (loop envelope)])]
+
+             [else
+              (rep 503 "need MAIL command")
+              (loop #f)])]
+
+          [(quit)
+           (rep 221 "goodbye")]
+
+          [else
+           (rep 502 "command not recognized")
+           (loop envelope)])))
     (close-output-port out)
     (close-input-port in)))
 
