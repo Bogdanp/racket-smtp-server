@@ -18,9 +18,9 @@
          (subtype . ,(entity-subtype v))
          (fields . ,(entity-fields v))
          (parts . ,(map help (entity-parts v)))
-         (body . ,(if (null? (entity-body v))
-                      #""
-                      (call-with-output-bytes (entity-body v)))))]
+         (body . ,(and
+                   (not (null? (entity-body v)))
+                   (call-with-output-bytes (entity-body v)))))]
 
       [else
        (raise-argument-error 'pp-message "(or/c message? entity?)" v)]))

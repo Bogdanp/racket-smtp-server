@@ -106,8 +106,7 @@
                         [out out]
                         [start? #t])
     (define (rep- status message)
-      (fprintf out "~a-~a\r\n" status message)
-      (flush-output out))
+      (fprintf out "~a-~a\r\n" status message))
     (define (rep status [message "OK"])
       (fprintf out "~a ~a\r\n" status message)
       (flush-output out))
@@ -127,15 +126,12 @@
               (loop #f)]
 
              [(ehlo)
-              (cond
-                [tls-encode
-                 (rep- 250 "OK")
-                 (rep 250 "STARTTLS")
-                 (loop #f)]
-
-                [else
-                 (rep 250)
-                 (loop #f)])]
+              (rep- 250 "8BITMIME")
+              (rep- 250 (format "SIZE ~a" (current-smtp-max-envelope-length)))
+              (when tls-encode
+                (rep- 250 "STARTTLS"))
+              (rep 250)
+              (loop #f)]
 
              [(rset)
               (rep 250 "reset")
@@ -158,6 +154,9 @@
                 (connection-loop ssl-in ssl-out #f))]
 
              [(mail)
+              ;; Potential improvements:
+              ;;   * Handling of 7BIT or 8BITMIME params from RFC1652
+              ;;   * Handling of SIZE= param from RFC1870
               (cond
                 [envelope
                  (rep 503 "nested MAIL command")
@@ -169,7 +168,7 @@
                         (make-envelope (caddr matches)))
                       (cond
                         [(envelope-too-long? new-envelope)
-                         (rep 500 "mail too long")
+                         (rep 552 "message exceeds fixed message maximum size")
                          (loop #f)]
 
                         [else
@@ -188,8 +187,8 @@
                         (add-envelope-recipient envelope (caddr matches)))
                       (cond
                         [(envelope-too-long? new-envelope)
-                         (rep 500 "mail too long")
-                         (loop #f)]
+                         (rep 552 "message exceeds fixed message maximum size")
+                         (loop envelope)]
 
                         [else
                          (rep 250)
@@ -228,15 +227,15 @@
                       (loop #f))]
 
                    [else
-                    (rep 500 "mail too long")
-                    (loop #f)])]
+                    (rep 552 "message exceeds fixed message maximum size")
+                    (loop envelope)])]
 
                 [else
                  (rep 503 "need MAIL command")
                  (loop #f)])]
 
              [(quit)
-              (rep 221)]
+              (rep 221 "goodbye")]
 
              [else
               (rep 502 "command not recognized")
