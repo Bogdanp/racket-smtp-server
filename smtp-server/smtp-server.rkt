@@ -127,11 +127,11 @@
            (rep 500 "line too long")
            (loop #f)]
 
-          [(helo)
+          [(#"HELO")
            (rep 250)
            (loop #f)]
 
-          [(ehlo)
+          [(#"EHLO")
            (rep- 250 (current-smtp-hostname))
            (rep- 250 "8BITMIME")
            (rep- 250 (format "SIZE ~a" (current-smtp-max-envelope-length)))
@@ -140,15 +140,15 @@
            (rep 250)
            (loop #f)]
 
-          [(rset)
+          [(#"RSET")
            (rep 250)
            (loop #f)]
 
-          [(noop)
+          [(#"NOOP")
            (rep 250)
            (loop envelope)]
 
-          [(starttls)
+          [(#"STARTTLS")
            (with-handlers ([exn:fail? (λ (_)
                                         (log-smtp-server-warning "TLS handshake failed")
                                         (rep 500 "protocol error")
@@ -160,7 +160,7 @@
              (log-smtp-server-debug "TLS connection initiatied")
              (connection-loop ssl-in ssl-out #f))]
 
-          [(mail)
+          [(#"MAIL")
            ;; Potential improvements:
            ;;   * Handling of 7BIT or 8BITMIME params from RFC1652
            ;;   * Handling of SIZE= param from RFC1870
@@ -186,7 +186,7 @@
               (rep 501 "syntax: MAIL FROM:<ADDRESS>")
               (loop #f)])]
 
-          [(rcpt)
+          [(#"RCPT")
            (cond
              [(and envelope (regexp-match #rx#"^(?i:(rcpt to:<([^>]+)>))" line-buf 0 line-len))
               => (λ (matches)
@@ -209,7 +209,7 @@
               (rep 503 "need MAIL command")
               (loop #f)])]
 
-          [(data)
+          [(#"DATA")
            (cond
              [(and envelope (null? (envelope-recipients envelope)))
               (rep 503 "need recipients")
@@ -241,7 +241,7 @@
               (rep 503 "need MAIL command")
               (loop #f)])]
 
-          [(quit)
+          [(#"QUIT")
            (rep 221 "goodbye")]
 
           [else
@@ -251,11 +251,20 @@
     (close-input-port in)))
 
 (define (parse-command line [len (bytes-length line)])
-  (string->symbol
-   (string-downcase
-    (bytes->string/utf-8 line #\nul 0 (or (find-sp line len)
-                                          (find-crlf line len)
-                                          len)))))
+  (define end
+    (or (find-sp   line len)
+        (find-crlf line len)
+        len))
+  (define bs (subbytes line 0 end))
+  (begin0 bs
+    (bytes-upcase! bs)))
+
+(define (bytes-upcase! bs)
+  (for ([i (in-naturals)]
+        [b (in-bytes bs)]
+        #:when (and (>= b 97)
+                    (<= b 122)))
+    (bytes-set! bs i (- b 32))))
 
 
 ;; reading ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
