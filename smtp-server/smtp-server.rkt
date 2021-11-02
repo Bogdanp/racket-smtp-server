@@ -104,10 +104,8 @@
     (custodian-shutdown-all cust)))
 
 (define (client-loop in out handler [tls-encode #f])
-  (define line-buf
-    (make-bytes (current-smtp-max-line-length)))
-  (define scratch-buf
-    (make-bytes (* 1 1024)))
+  (define line-buf (make-bytes (current-smtp-max-line-length)))
+  (define scratch-buf (make-bytes (current-smtp-max-line-length)))
   (let connection-loop ([in in]
                         [out out]
                         [start? #t])
