@@ -3,7 +3,9 @@
 @(require (for-label net/smtp-server
                      openssl
                      racket/base
-                     racket/contract))
+                     racket/contract
+                     racket/string
+                     racket/os))
 
 @title{@tt{smtp-server}}
 @author[(author+email "Bogdan Popa" "bogdan@defn.io")]
@@ -41,6 +43,10 @@ See "example/" in the @repo-link for an example with @tt{STARTTLS} support.
 
   The contract for TLS-encoding procedures.  See also
   @racket[ports->ssl-ports].
+}
+
+@defparam[current-smtp-hostname hostname non-empty-string? #:value (gethostname)]{
+  Controls the host name displayed to clients.
 }
 
 @defparam[current-smtp-max-line-length len exact-nonnegative-integer? #:value 1024]{

@@ -1,14 +1,20 @@
 #lang racket/base
 
 (require racket/contract
+         racket/os
+         racket/string
          racket/tcp)
 
 ;; params ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (provide
  (contract-out
+  [current-smtp-hostname (parameter/c non-empty-string?)]
   [current-smtp-max-line-length (parameter/c exact-nonnegative-integer?)]
   [current-smtp-max-envelope-length (parameter/c exact-nonnegative-integer?)]))
+
+(define current-smtp-hostname
+  (make-parameter (gethostname)))
 
 (define current-smtp-max-line-length
   (make-parameter 1024))
@@ -111,7 +117,7 @@
       (fprintf out "~a ~a\r\n" status message)
       (flush-output out))
     (when start?
-      (rep 220 "ready"))
+      (rep 220 (current-smtp-hostname)))
     (with-handlers ([exn:fail?
                      (λ (e)
                        (log-smtp-server-warning "unhandled error: ~a" (exn-message e)))])
@@ -126,6 +132,7 @@
               (loop #f)]
 
              [(ehlo)
+              (rep- 250 (current-smtp-hostname))
               (rep- 250 "8BITMIME")
               (rep- 250 (format "SIZE ~a" (current-smtp-max-envelope-length)))
               (when tls-encode
@@ -134,11 +141,11 @@
               (loop #f)]
 
              [(rset)
-              (rep 250 "reset")
+              (rep 250)
               (loop #f)]
 
              [(noop)
-              (rep 250 "noop")
+              (rep 250)
               (loop envelope)]
 
              [(starttls)
