@@ -101,7 +101,8 @@
   (lambda ()
     (channel-put stop-ch #t)
     (thread-wait server-thd)
-    (custodian-shutdown-all cust)))
+    (custodian-shutdown-all cust)
+    (tcp-close listener)))
 
 (define (client-loop in out handler [tls-encode #f])
   (define line-buf (make-bytes (current-smtp-max-line-length)))
