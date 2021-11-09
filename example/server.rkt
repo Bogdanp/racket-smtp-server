@@ -4,7 +4,11 @@
          net/smtp-server
          openssl
          racket/port
-         racket/pretty)
+         racket/pretty
+         racket/runtime-path)
+
+(define-runtime-path example.key "example.key")
+(define-runtime-path example.crt "example.crt")
 
 (define (pp-message m)
   (define (help v)
@@ -28,8 +32,8 @@
 
 (define ssl-context
   (ssl-make-server-context
-   #:private-key `(pem "example.key")
-   #:certificate-chain "example.crt"))
+   #:private-key `(pem ,example.key)
+   #:certificate-chain example.crt))
 
 (define stop
   (start-smtp-server
@@ -45,7 +49,9 @@
                    #:context ssl-context
                    #:encrypt protocol
                    #:close-original? close?))
-   (compose1 pp-message mime-analyze envelope-data)))
+   (λ (e)
+     (println e)
+     (pp-message (mime-analyze (envelope-data e))))))
 
 (with-handlers ([exn:break? (λ (_) (stop))])
   (sync never-evt))
