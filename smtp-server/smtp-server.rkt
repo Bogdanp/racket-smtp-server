@@ -170,7 +170,7 @@
               (rep 503 "nested MAIL command")
               (loop envelope)]
 
-             [(regexp-match #rx#"^(?i:(mail from:<([^>]+)>))" line-buf 0 line-len)
+             [(regexp-match #rx#"^(?i:(mail from:<(.+)>))" line-buf 0 line-len)
               => (λ (matches)
                    (define new-envelope
                      (make-envelope (caddr matches)))
@@ -189,7 +189,7 @@
 
           [(#"RCPT")
            (cond
-             [(and envelope (regexp-match #rx#"^(?i:(rcpt to:<([^>]+)>))" line-buf 0 line-len))
+             [(and envelope (regexp-match #rx#"^(?i:(rcpt to:<(.+)>))" line-buf 0 line-len))
               => (λ (matches)
                    (define new-envelope
                      (add-envelope-recipient envelope (caddr matches)))
