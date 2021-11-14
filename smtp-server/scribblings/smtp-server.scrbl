@@ -49,16 +49,6 @@ See "example/" in the @repo-link for an example with @tt{STARTTLS} support.
   Controls the host name displayed to clients.
 }
 
-@defparam[current-smtp-max-line-length len exact-nonnegative-integer? #:value 1024]{
-  Lines from clients that are longer than this value will be rejected.
-}
-
-@defparam[current-smtp-max-envelope-length len exact-nonnegative-integer? #:value (* 10 1024 1024)]{
-  Controls the maximum length of incoming e-mails from clients.  The
-  total length of an envelope includes the length in bytes of the sender
-  and the recipients list as well as the message data.
-}
-
 @defstruct[envelope ([sender bytes?]
                      [recipients (listof bytes?)]
                      [data bytes?])]{
@@ -69,6 +59,7 @@ See "example/" in the @repo-link for an example with @tt{STARTTLS} support.
 @defproc[(start-smtp-server [handler (-> envelope? void?)]
                             [#:host host string? "127.0.0.1"]
                             [#:port port (integer-in 0 65535) 25]
+                            [#:limits lim smtp-limits? (make-smtp-limits)]
                             [#:tls-encode tls-encode (or/c #f tls-encode-proc/c) #f]) (-> void?)]{
 
   Starts an SMTP server that listens on @racket[host] and
@@ -79,9 +70,39 @@ See "example/" in the @repo-link for an example with @tt{STARTTLS} support.
   the @racket[handler] raises an exception, the server notifies the
   client that the message has been rejected.
 
+  The @racket[#:limits] arguments can be used to customize various
+  @tech{security limits}.
+
   If the optional @racket[#:tls-encode] argument supplies a
   @racket[tls-encode-proc/c] value, the server advertises
   @tt{STARTTLS} support and clients may opt in to TLS encryption.
+}
+
+@deftogether[(
+  @defproc[(smtp-limits? [v any/c]) boolean?]
+  @defproc[(make-smtp-limits [#:max-connections max-connections exact-positive-integer? 512]
+                             [#:max-line-length max-line-length exact-nonnegative-integer? 1024]
+                             [#:max-envelope-length max-envelope-length exact-nonnegative-integer? (* 10 1024 1024)]
+                             [#:session-timeout session-timeout (and/c number? positive?) 300]) smtp-limits?]
+)]{
+  @deftech{Security limits} allow you to configure various
+  security-related limits on an SMTP server.
+
+  The @racket[#:max-connections] argument controls the maximum number
+  of concurrent client connections that the server will accept at a
+  time.
+
+  The @racket[#:max-line-length] argument controls the maximum length
+  in bytes of each line received from a client may be.  The server
+  will reject lines longer than this amount.
+
+  The @racket[#:max-envelope-length] argument controls the maximum
+  length of incoming e-mails from clients.  The total length of an
+  envlope includes the length in bytes of the sender and the
+  recipients list as well as the message data.
+
+  The @racket[#:session-timeout] argument controls the maximum amount
+  of time, in seconds, that a client session may be open for.
 }
 
 

@@ -1,6 +1,7 @@
 #lang racket/base
 
 (require racket/contract
+         racket/format
          racket/os
          racket/string
          racket/tcp)
@@ -9,18 +10,43 @@
 
 (provide
  (contract-out
-  [current-smtp-hostname (parameter/c non-empty-string?)]
-  [current-smtp-max-line-length (parameter/c exact-nonnegative-integer?)]
-  [current-smtp-max-envelope-length (parameter/c exact-nonnegative-integer?)]))
+  [current-smtp-hostname (parameter/c non-empty-string?)]))
 
 (define current-smtp-hostname
   (make-parameter (gethostname)))
 
-(define current-smtp-max-line-length
-  (make-parameter 1024))
 
-(define current-smtp-max-envelope-length
-  (make-parameter (* 10 1024 1024)))
+;; limits ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(provide
+ smtp-limits?
+ (contract-out
+  [make-smtp-limits (->* ()
+                         (#:max-connections exact-positive-integer?
+                          #:max-line-length exact-nonnegative-integer?
+                          #:max-envelope-length exact-nonnegative-integer?
+                          #:session-timeout (and/c number? positive?))
+                         smtp-limits?)]))
+
+(struct smtp-limits
+  (max-connections
+   max-line-length
+   max-envelope-length
+   session-timeout)
+  #:transparent)
+
+(define (make-smtp-limits #:max-connections [max-connections 512]
+                          #:max-line-length [max-line-length 1024]
+                          #:max-envelope-length [max-envelope-length (* 10 1024 1024)]
+                          #:session-timeout [session-timeout 300])
+  (smtp-limits max-connections max-line-length max-envelope-length session-timeout))
+
+(define (make-session-deadline lim)
+  (alarm-evt (+ (current-inexact-milliseconds)
+                (* (smtp-limits-session-timeout lim) 1000.0))))
+
+(define (max-connections? lim n)
+  (>= n (smtp-limits-max-connections lim)))
 
 
 ;; envelope ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -50,9 +76,9 @@
      (for/sum ([r (in-list (envelope-recipients e))])
        (bytes-length r))))
 
-(define (envelope-too-long? e)
+(define (envelope-too-long? e lim)
   (> (envelope-length e)
-     (current-smtp-max-envelope-length)))
+     (smtp-limits-max-envelope-length lim)))
 
 
 ;; server ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -63,6 +89,7 @@
   [start-smtp-server (->* ((-> envelope? void?))
                           (#:host string?
                            #:port (integer-in 0 65535)
+                           #:limits smtp-limits?
                            #:tls-encode (or/c #f tls-encode-proc/c))
                           (-> void?))]))
 
@@ -79,34 +106,60 @@
 (define (start-smtp-server handler
                            #:host [host "127.0.0.1"]
                            #:port [port 25]
+                           #:limits [lim (make-smtp-limits)]
                            #:tls-encode [tls-encode #f])
   (define cust (make-custodian))
   (define stop-ch (make-channel))
-  (define listener
-    (tcp-listen port 128 #t host))
   (define server-thd
     (parameterize ([current-custodian cust])
+      (define listener
+        (tcp-listen port 128 #t host))
       (thread
        (lambda ()
-         (let loop ()
-           (sync
+         (let loop ([deadlines (hasheq)])
+           (apply
+            sync
             (handle-evt stop-ch void)
             (handle-evt
-             listener
+             (if (max-connections? lim (hash-count deadlines)) never-evt listener)
              (lambda (_)
                (define-values (in out)
                  (tcp-accept listener))
-               (thread (λ () (client-loop in out handler tls-encode)))
-               (loop)))))))))
+               (define-values (_local-ip remote-ip)
+                 (tcp-addresses in))
+               (define connection-id
+                 (string->symbol (~a "conn:" remote-ip)))
+               (define client-thd
+                 (thread
+                  (procedure-rename
+                   (lambda ()
+                     (client-loop in out lim handler tls-encode))
+                   connection-id)))
+               (log-smtp-server-debug "accepted connection ~a" client-thd)
+               (loop (hash-set deadlines client-thd (make-session-deadline lim)))))
+            (append
+             (for/list ([client-thd (in-hash-keys deadlines)])
+               (handle-evt
+                client-thd
+                (lambda (_)
+                  (log-smtp-server-debug "connection ~a closed" client-thd)
+                  (loop (hash-remove deadlines client-thd)))))
+             (for/list ([(client-thd deadline-evt) (in-hash deadlines)])
+               (handle-evt
+                deadline-evt
+                (lambda (_)
+                  (break-thread client-thd 'hang-up)
+                  (log-smtp-server-warning "~a session timed out" client-thd)
+                  (loop (hash-remove deadlines client-thd))))))))))))
   (lambda ()
     (channel-put stop-ch #t)
     (thread-wait server-thd)
-    (custodian-shutdown-all cust)
-    (tcp-close listener)))
+    (custodian-shutdown-all cust)))
 
-(define (client-loop in out handler [tls-encode #f])
-  (define line-buf (make-bytes (current-smtp-max-line-length)))
-  (define scratch-buf (make-bytes (current-smtp-max-line-length)))
+(define (client-loop in out lim handler tls-encode)
+  (define hostname (current-smtp-hostname))
+  (define line-buf (make-bytes (smtp-limits-max-line-length lim)))
+  (define scratch-buf (make-bytes (smtp-limits-max-line-length lim)))
   (let connection-loop ([in in]
                         [out out]
                         [start? #t])
@@ -116,10 +169,9 @@
       (fprintf out "~a ~a\r\n" status message)
       (flush-output out))
     (when start?
-      (rep 220 (current-smtp-hostname)))
-    (with-handlers ([exn:fail?
-                     (λ (e)
-                       (log-smtp-server-warning "unhandled error: ~a" (exn-message e)))])
+      (rep 220 hostname))
+    (with-handlers ([exn:break:hang-up? void]
+                    [exn:fail? (λ (e) (log-smtp-server-warning "unhandled error: ~a" (exn-message e)))])
       (let loop ([envelope #f])
         (define line-len (read-smtp-line! line-buf in scratch-buf))
         (case (and line-len (parse-command line-buf line-len))
@@ -133,9 +185,9 @@
            (loop #f)]
 
           [(#"EHLO")
-           (rep- 250 (current-smtp-hostname))
+           (rep- 250 hostname)
            (rep- 250 "8BITMIME")
-           (rep- 250 (format "SIZE ~a" (current-smtp-max-envelope-length)))
+           (rep- 250 (format "SIZE ~a" (smtp-limits-max-envelope-length lim)))
            (when tls-encode
              (rep- 250 "STARTTLS"))
            (rep 250)
@@ -175,7 +227,7 @@
                    (define new-envelope
                      (make-envelope (caddr matches)))
                    (cond
-                     [(envelope-too-long? new-envelope)
+                     [(envelope-too-long? new-envelope lim)
                       (rep 552 "message exceeds fixed message maximum size")
                       (loop #f)]
 
@@ -194,7 +246,7 @@
                    (define new-envelope
                      (add-envelope-recipient envelope (caddr matches)))
                    (cond
-                     [(envelope-too-long? new-envelope)
+                     [(envelope-too-long? new-envelope lim)
                       (rep 552 "message exceeds fixed message maximum size")
                       (loop envelope)]
 
@@ -219,7 +271,7 @@
              [envelope
               (rep 354 "end data with <CRLF>.<CRLF>")
               (define max-len
-                (- (current-smtp-max-envelope-length)
+                (- (smtp-limits-max-envelope-length lim)
                    (envelope-length envelope)))
               (define data
                 (read-mail-data line-buf in scratch-buf max-len))
@@ -248,8 +300,9 @@
           [else
            (rep 502 "command not recognized")
            (loop envelope)])))
-    (close-output-port out)
-    (close-input-port in)))
+    (parameterize-break #f
+      (close-output-port out)
+      (close-input-port in))))
 
 (define (parse-command line [len (bytes-length line)])
   (define end
