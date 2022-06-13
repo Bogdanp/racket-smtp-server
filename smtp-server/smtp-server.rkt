@@ -280,11 +280,10 @@
                  (with-handlers ([exn:fail?
                                   (λ (e)
                                     (log-smtp-server-warning "unexpected handler error: ~a" (exn-message e))
-                                    (rep 554 "internal error")
-                                    (loop #f))])
+                                    (rep 554 "internal error"))])
                    (handler (add-envelope-data envelope data))
-                   (rep 250)
-                   (loop #f))]
+                   (rep 250))
+                 (loop #f)]
 
                 [else
                  (rep 552 "message exceeds fixed message maximum size")
