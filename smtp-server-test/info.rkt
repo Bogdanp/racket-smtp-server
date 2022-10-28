@@ -3,6 +3,6 @@
 (define collection "tests")
 (define deps '("base"))
 (define build-deps '("net-lib"
-                     "rackcheck"
+                     "rackcheck-lib"
                      "rackunit-lib"
                      "smtp-server"))
