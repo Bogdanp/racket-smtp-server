@@ -7,7 +7,7 @@
                      racket/string
                      racket/os))
 
-@title{@tt{smtp-server}}
+@title{SMTP Server}
 @author[(author+email "Bogdan Popa" "bogdan@defn.io")]
 @defmodule[net/smtp-server]
 
