@@ -6,4 +6,4 @@
 (define deps '("base"))
 (define build-deps '("racket-doc"
                      "scribble-lib"))
-(define scribblings '(("scribblings/smtp-server.scrbl")))
+(define scribblings '(("scribblings/smtp-server.scrbl" () (net-library))))
