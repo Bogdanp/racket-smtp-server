@@ -56,26 +56,28 @@
       "end-to-end"
 
       #:before
-      (λ ()
+      (lambda ()
         (define ssl-context
           (ssl-make-server-context
            #:private-key `(pem ,key-path)
            #:certificate-chain cert-path))
-
-        (set! stop (start-smtp-server
-                    #:port 10025
-                    #:tls-encode (λ (in out #:mode mode #:encrypt protocol #:close-original? close?)
-                                   (ports->ssl-ports
-                                    in out
-                                    #:mode mode
-                                    #:context ssl-context
-                                    #:encrypt protocol
-                                    #:close-original? close?))
-                    (λ (envelope)
-                      (set! envelopes (cons envelope envelopes))))))
+        (define stop-server
+          (start-smtp-server
+           #:port 10025
+           #:tls-encode
+           (lambda (in out #:mode mode #:encrypt protocol #:close-original? close?)
+             (ports->ssl-ports
+              in out
+              #:mode mode
+              #:context ssl-context
+              #:encrypt protocol
+              #:close-original? close?))
+           (lambda (envelope)
+             (set! envelopes (cons envelope envelopes)))))
+        (set! stop stop-server))
 
       #:after
-      (λ ()
+      (lambda ()
         (and stop (stop)))
 
       (test-case "receiving an e-mail in plain text"
@@ -94,25 +96,30 @@
            '(#"bogdan@example.com")
            #"Subject: hi\r\nHello!\r\n"))))
 
-      ;; Disable test case under GHA due to OpenSSL fuckery.
-      (unless (getenv "GITHUB_ACTIONS")
-        (test-case "receiving an e-mail via STARTTLS"
-          (set! envelopes null)
-          (smtp-send-message
-           #:port-no 10025
-           #:tls-encode ports->ssl-ports
-           "127.0.0.1"
-           "bogdan@defn.io"
-           '("bogdan@example.com" "paul@example.com")
-           "Subject: hi\r\n"
-           (list "Hello!"))
-          (check-equal?
-           envelopes
-           (list
-            (envelope
-             #"bogdan@defn.io"
-             '(#"paul@example.com" #"bogdan@example.com")
-             #"Subject: hi\r\nHello!\r\n")))))))))
+      (test-case "receiving an e-mail via STARTTLS"
+        (set! envelopes null)
+        (smtp-send-message
+         #:port-no 10025
+         #:tls-encode
+         (lambda (in out #:mode mode #:encrypt protocol #:close-original? close?)
+           (ports->ssl-ports
+            in out
+            #:mode mode
+            #:context (ssl-make-client-context)
+            #:encrypt protocol
+            #:close-original? close?))
+         "127.0.0.1"
+         "bogdan@defn.io"
+         '("bogdan@example.com" "paul@example.com")
+         "Subject: hi\r\n"
+         (list "Hello!"))
+        (check-equal?
+         envelopes
+         (list
+          (envelope
+           #"bogdan@defn.io"
+           '(#"paul@example.com" #"bogdan@example.com")
+           #"Subject: hi\r\nHello!\r\n"))))))))
 
 
 (module+ test
