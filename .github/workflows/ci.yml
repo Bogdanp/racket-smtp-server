@@ -11,6 +11,9 @@ jobs:
         include:
           - racket-version: current
             allow-fail: true
+        exclude:
+          - racket-variant: BC
+            racket-version: current
     name: Build and Test on Racket ${{ matrix.racket-variant }} ${{ matrix.racket-version }}
     steps:
       - uses: actions/checkout@master
