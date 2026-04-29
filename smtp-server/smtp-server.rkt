@@ -1,6 +1,6 @@
 #lang racket/base
 
-(require racket/contract
+(require racket/contract/base
          racket/format
          racket/os
          racket/string
@@ -21,12 +21,13 @@
 (provide
  smtp-limits?
  (contract-out
-  [make-smtp-limits (->* ()
-                         (#:max-connections exact-positive-integer?
-                          #:max-line-length exact-nonnegative-integer?
-                          #:max-envelope-length exact-nonnegative-integer?
-                          #:session-timeout (and/c number? positive?))
-                         smtp-limits?)]))
+  [make-smtp-limits
+   (->* []
+        [#:max-connections exact-positive-integer?
+         #:max-line-length exact-nonnegative-integer?
+         #:max-envelope-length exact-nonnegative-integer?
+         #:session-timeout (and/c number? positive?)]
+        smtp-limits?)]))
 
 (struct smtp-limits
   (max-connections
@@ -86,12 +87,13 @@
 (provide
  tls-encode-proc/c
  (contract-out
-  [start-smtp-server (->* ((-> envelope? void?))
-                          (#:host string?
-                           #:port (integer-in 0 65535)
-                           #:limits smtp-limits?
-                           #:tls-encode (or/c #f tls-encode-proc/c))
-                          (-> void?))]))
+  [start-smtp-server
+   (->* [(-> envelope? void?)]
+        [#:host string?
+         #:port (integer-in 0 65535)
+         #:limits smtp-limits?
+         #:tls-encode (or/c #f tls-encode-proc/c)]
+        (-> void?))]))
 
 (define-logger smtp-server)
 
